@@ -602,51 +602,52 @@ def simplify_unicode(sentence):
     sentence = re.sub(r'[^A-ZÄÖÜÕŽŠa-zäöüõšž ,]+', lambda m: r'{}'.format( strip_combining(m.group(0)) ), sentence)
     return sentence
 
-def post_process(sentence):
+def post_process(sentence, convert_target):
     """
     Postprocessing to normalize the sentence and convert any URLs.
     :param sentence:
     :return: str
     """
-    # TODO there should be a separate URL/email processing fuction where otherwise silent characters (hyphens,
-    #  underscores) are
-    #  also read. Fortunately EstNLTK does not split URLs
+    if convert_target != 'asr_lm':
+      # TODO there should be a separate URL/email processing fuction where otherwise silent characters (hyphens,
+      #  underscores) are
+      #  also read. Fortunately EstNLTK does not split URLs
+      sentence = re.sub(r'www\.', r' VVV punkt ', sentence)
+      sentence = re.sub(r'\.ee(?![A-ZÄÖÜÕŽŠa-zäöüõšž])', r' punkt EE', sentence)
+      sentence = re.sub(r'https://', r' HTTPS koolon kaldkriips kaldkriips ', sentence)
+      sentence = re.sub(r'http://', r' HTTP koolon kaldkriips kaldkriips ', sentence)
+      sentence = re.sub(r'\?([A-ZÄÖÜÕŽŠa-zäöüõšž])', r' küsimärk \g<1>', sentence)
+      sentence = re.sub(r'/([A-ZÄÖÜÕŽŠa-zäöüõšž])', r' kaldkriips \g<1>', sentence)
+      sentence = re.sub(r'\.([A-ZÄÖÜÕŽŠa-zäöüõšž])', r' punkt \g<1>', sentence)
+      sentence = re.sub(r'\) ', r', ', sentence) # pausi tekitamiseks
+      sentence = re.sub(r' +', r' ', sentence)
 
-    sentence = re.sub(r'www\.', r' VVV punkt ', sentence)
-    sentence = re.sub(r'\.ee(?![A-ZÄÖÜÕŽŠa-zäöüõšž])', r' punkt EE', sentence)
-    sentence = re.sub(r'https://', r' HTTPS koolon kaldkriips kaldkriips ', sentence)
-    sentence = re.sub(r'http://', r' HTTP koolon kaldkriips kaldkriips ', sentence)
-    sentence = re.sub(r'\?([A-ZÄÖÜÕŽŠa-zäöüõšž])', r' küsimärk \g<1>', sentence)
-    sentence = re.sub(r'/([A-ZÄÖÜÕŽŠa-zäöüõšž])', r' kaldkriips \g<1>', sentence)
-    sentence = re.sub(r'\.([A-ZÄÖÜÕŽŠa-zäöüõšž])', r' punkt \g<1>', sentence)
-    sentence = re.sub(r'\) ', r', ', sentence) # pausi tekitamiseks
-    sentence = re.sub(r' +', r' ', sentence)
+      # replace annoying long repetitions with ' repeating symbol X ',
+      # then any remaining symbols (in URLs etc) that look like audible
+      for key in last_resort:
+          korduv = re.escape(key) + '{4,}'
+          sentence = re.sub(r'{}'.format(korduv), r" korduv märk{}".format(last_resort[key]), sentence)
+      sentence = sentence.translate( str.maketrans(last_resort) )
 
-    # replace annoying long repetitions with ' repeating symbol X ',
-    # then any remaining symbols (in URLs etc) that look like audible
-    for key in last_resort:
-        korduv = re.escape(key) + '{4,}'
-        sentence = re.sub(r'{}'.format(korduv), r" korduv märk{}".format(last_resort[key]), sentence)
-    sentence = sentence.translate( str.maketrans(last_resort) )
+      # very long uppercase sequences are probably words
+      sentence = re.sub(r'[A-ZÄÖÜÕŽŠ,\-]{5,}', lambda m: r'{}'.format(m.group(0).lower()), sentence)
 
-    # very long uppercase sequences are probably words
-    sentence = re.sub(r'[A-ZÄÖÜÕŽŠ,\-]{5,}', lambda m: r'{}'.format(m.group(0).lower()), sentence)
-
-    sentence = normalize_phrase(sentence)
-    """
-    Convert unpronounceable letter sequences to spelled form
-    Convert all remaining numeric sequences to words in sg. nom
-    """
-    sentence = re.sub(r'[A-ZÄÖÜÕŽŠa-zäöüõšž]{2,}', spell_if_needed, sentence)
-    sentence = re.sub(r'\d+', read_nums_if_needed, sentence)
+      sentence = normalize_phrase(sentence)
+      """
+      Convert unpronounceable letter sequences to spelled form
+      Convert all remaining numeric sequences to words in sg. nom
+      """
+      sentence = re.sub(r'[A-ZÄÖÜÕŽŠa-zäöüõšž]{2,}', spell_if_needed, sentence)
+      sentence = re.sub(r'\d+', read_nums_if_needed, sentence)
 
     return sentence
 
 
-def convert_sentence(sentence):
+def convert_sentence(sentence, convert_target='tts'):
     """
         Converts a sentence to input supported by Estonian text-to-speech application.
         :param sentence: str
+        :param convert_target: str, either 'tts' or 'asr_lm'. If 'asr_lm', then certain steps are skipped
         :return: str
         """
 
@@ -655,11 +656,13 @@ def convert_sentence(sentence):
     sentence = re.sub(r'(\d)\.\.\.(\d)', r'\g<1> kuni \g<2>', sentence)
 
     # reduce Unicode repertoire _before_ inserting any hyphens
-    sentence = simplify_unicode (sentence)
+    if convert_target != 'asr_lm':
+      sentence = simplify_unicode(sentence)
 
     # add a hyphen between any number-letter sequences  # TODO should not be done in URLs
-    sentence = re.sub(r'(\d)([A-ZÄÖÜÕŽŠa-zäöüõšž])', r'\g<1>-\g<2>', sentence)
-    sentence = re.sub(r'([A-ZÄÖÜÕŽŠa-zäöüõšž])(\d)', r'\g<1>-\g<2>', sentence)
+    if convert_target != "asr_lm":
+      sentence = re.sub(r'(\d)([A-ZÄÖÜÕŽŠa-zäöüõšž])', r'\g<1>-\g<2>', sentence)
+      sentence = re.sub(r'([A-ZÄÖÜÕŽŠa-zäöüõšž])(\d)', r'\g<1>-\g<2>', sentence)
     # remove grouping between numbers
     # keeping space in 2006-10-27 12:48:50, in general require group of 3
     sentence = re.sub(r'([0-9]) ([0-9]{3})(?!\d)', r'\g<1>\g<2>', sentence)
@@ -743,8 +746,9 @@ def convert_sentence(sentence):
                 tag_indices['A'].append(i)
                 continue
             # aadresside, klasside jms käsitlemine, kus sõnaliigiks Y, nt Pärna 14a või 5b
-            elif postag == 'Y' and re.search(r'\d+-?\w?$', text_lemma):
-                tag_indices['K'].append(i)
+            elif postag == 'Y' and re.search(r'\d+-?\w?$', text_lemma):                
+                if convert_target != 'asr_lm':
+                  tag_indices['K'].append(i)
                 continue
 
         elif postag in num_postags:
@@ -804,12 +808,13 @@ def convert_sentence(sentence):
 
         # capitalized abbreviations
         elif postag == 'Y':
-            normalized_lemma = normalize_phrase(text_lemma)
-            if normalized_lemma != text_lemma:
-                text.morph_analysis[i].annotations[0].lemma = normalized_lemma
-                # lisaks peame käändega ettevaatlik olema, et käändelõputa Y ei ühilduks järgnevaga
-                if text.morph_analysis[i].annotations[0].form != '?': tag_indices['Y'].append(i)
-                continue
+            if convert_target != "asr_lm":
+              normalized_lemma = normalize_phrase(text_lemma)
+              if normalized_lemma != text_lemma:
+                  text.morph_analysis[i].annotations[0].lemma = normalized_lemma
+                  # lisaks peame käändega ettevaatlik olema, et käändelõputa Y ei ühilduks järgnevaga
+                  if text.morph_analysis[i].annotations[0].form != '?': tag_indices['Y'].append(i)
+                  continue
 
         # undetected numbers with ne/line suffix
         if re.match(r'^\d+-?[a-zA_ZäöüõÄÖÕÜšžŠŽ]+(ne|line)$', text_lemma):
@@ -886,6 +891,6 @@ def convert_sentence(sentence):
                 # lause lõpust punkt kaduda
                 if text.text.endswith('.') and not new_sentence.endswith('.'):
                     new_sentence += '.'
-        return post_process(new_sentence)
+        return post_process(new_sentence, convert_target)
     else:
-        return post_process(sentence)
+        return post_process(sentence, convert_target)
